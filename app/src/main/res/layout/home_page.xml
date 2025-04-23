@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/bg"
+    >
+
+    <LinearLayout
+        android:id="@+id/linear"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#80FFFFFF"
+        android:orientation="vertical"
+        >
+
+        <TextView
+            android:id="@+id/textView2"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="200dp"
+            android:text="Go Skiing"
+            android:textSize="30dp"
+            android:textColor="@color/black"
+            android:textStyle="bold"
+
+            />
+
+
+        <EditText
+            android:id="@+id/editTextText"
+            android:layout_width="250dp"
+            android:layout_height="wrap_content"
+            android:background="@drawable/alpe_bg"
+            android:layout_gravity="center"
+            android:layout_margin="10dp"
+            android:padding="15dp"
+            android:hint="Player name"
+            android:gravity="center|start"
+            android:inputType="text" />
+
+        <Button
+            android:id="@+id/buttonStart"
+            android:layout_width="150dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:padding="15dp"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/rupple_bg_skyblue"
+            android:text="Start Game" />
+
+        <Button
+            android:id="@+id/buttonRankings"
+            android:layout_width="150dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_marginTop="10dp"
+            android:padding="15dp"
+            android:background="@drawable/rupple_bg_skyblue"
+            android:text="Rankings" />
+
+        <Button
+            android:id="@+id/buttonSeting"
+            android:layout_width="150dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:padding="15dp"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/rupple_bg_skyblue"
+            android:text="Seting" />
+
+    </LinearLayout>
+
+
+</LinearLayout>
