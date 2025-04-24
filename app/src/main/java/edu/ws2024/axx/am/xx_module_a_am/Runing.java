@@ -17,7 +17,6 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.media.MediaPlayer;
 import android.os.Bundle;
-import android.os.Environment;
 import android.os.Handler;
 import android.os.Message;
 import android.os.SystemClock;
@@ -36,11 +35,6 @@ import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicLong;
@@ -52,16 +46,12 @@ public class Runing extends AppCompatActivity implements SensorEventListener {
     private AtomicLong lastCoinGeneratedTime = new AtomicLong(0);
     // 最小生成间隔时间（单位：毫秒）
     private static final long MIN_GENERATION_INTERVAL = 2000;
-
     // 用于控制跳跃动画的属性动画对象
     private ObjectAnimator jumpAnimator;
     // 记录滑雪者初始Y坐标
     private float initialY;
-
-
     private ImageView gameCharacterImageView;
     private Bitmap originalCharacterBitmap;
-
     private static final int REQUEST_EXTERNAL_STORAGE = 1;
     private static final String[] PERMISSIONS_STORAGE = {
             Manifest.permission.WRITE_EXTERNAL_STORAGE
@@ -80,18 +70,17 @@ public class Runing extends AppCompatActivity implements SensorEventListener {
     private MediaPlayer jumpSound;
     private MediaPlayer coinSound;
     private MediaPlayer gameOverSound;
-//    private Handler handler = new Handler();
+    //    private Handler handler = new Handler();
     private Runnable obstacleGenerator;
     private Runnable coinGenerator;
     private boolean isInvincible = false;
     private int invincibleCoins = 0;
     private Random random = new Random();
     private ConstraintLayout gameSceneLayout;
-
-
+    private ImageView snowView;
+    private long gameStartTime;
     @SuppressLint("HandlerLeak")
     private Handler handler = new Handler() {
-
         @Override
         public void handleMessage(@NonNull Message msg) {
             super.handleMessage(msg);
@@ -103,53 +92,76 @@ public class Runing extends AppCompatActivity implements SensorEventListener {
             }
         }
     };
+    private Handler collisionHandler = new Handler();
+    private Runnable collisionChecker = new Runnable() {
+        @Override
+        public void run() {
+            if (!isPaused &&!isGameOver) {
+                float skierX = skierView.getX();
+                float skierY = skierView.getY();
+                for (int i = 0; i < gameSceneLayout.getChildCount(); i++) {
+                    View child = gameSceneLayout.getChildAt(i);
+                    if (child.getTag() != null && child.getTag().equals("obstacle")) {
+                        float obstacleX = child.getX();
+                        float obstacleY = child.getY();
+                        if (skierY >= obstacleY && skierX + skierView.getWidth() >= obstacleX && skierX <= obstacleX + child.getWidth()) {
+                            if (!isInvincible) {
+                                gameOver();
+                            }
+                        }
+                    } else if (child.getTag() != null && child.getTag().equals("coin")) {
+                        float coinX = child.getX();
+                        if (coinX <= skierX + skierView.getWidth() && coinX + child.getWidth() >= skierX) {
+                            coinCount++;
+                            coinQuantityText.setText("" + coinCount);
+                            coinSound.start();
+                            gameSceneLayout.removeView(child);
+                        }
+                    }
+                }
+                collisionHandler.postDelayed(this, 100);
+            }
+        }
+    };
+
+
     // 随机数生成器，用于生成随机位置和随机延迟时间
-
-
     @SuppressLint("SetTextI18n")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.game_page);
-        // 游戏场景布局，用于添加障碍物和金币的 ImageView
+        // 游戏场景布局，用于添加障碍物和金币的ImageView
         gameSceneLayout = findViewById(R.id.pm);
-
-
         gameCharacterImageView = findViewById(R.id.sking_peple);
         // 加载原始角色图片
         originalCharacterBitmap = BitmapFactory.decodeResource(getResources(), R.drawable.skiing_person);
-
         // 读取保存的颜色值
         SharedPreferences prefs = getSharedPreferences("game_settings", MODE_PRIVATE);
         int savedColor = prefs.getInt("character_color", Color.WHITE); // 默认颜色为白色
-
         // 应用保存的颜色
         Bitmap modifiedBitmap = changeNonBlackPixelsColor(originalCharacterBitmap, savedColor);
         gameCharacterImageView.setImageBitmap(modifiedBitmap);
-
         skierView = findViewById(R.id.sking_peple);
         pauseButton = findViewById(R.id.pause);
         playerNameText = findViewById(R.id.player_name_text);
         coinQuantityText = findViewById(R.id.gold);
         durationText = findViewById(R.id.sacende);
-
         sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
-
         // 初始化音乐
         backgroundMusic = MediaPlayer.create(this, R.raw.bgm);
         jumpSound = MediaPlayer.create(this, R.raw.jump);
         coinSound = MediaPlayer.create(this, R.raw.coin);
         gameOverSound = MediaPlayer.create(this, R.raw.game_over);
-
         // 游戏开始设置
         coinCount = 10;
-        coinQuantityText.setText(""+coinCount);
+        coinQuantityText.setText("" + coinCount);
         startTime = SystemClock.elapsedRealtime();
+        gameStartTime = System.currentTimeMillis();
         sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME);
         backgroundMusic.start();
         startRecording();
-
         // 暂停按钮点击事件
         pauseButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -161,7 +173,6 @@ public class Runing extends AppCompatActivity implements SensorEventListener {
                 }
             }
         });
-
         // 屏幕点击事件
         View view = findViewById(R.id.pm);
         view.setOnTouchListener(new View.OnTouchListener() {
@@ -173,7 +184,6 @@ public class Runing extends AppCompatActivity implements SensorEventListener {
                 return true;
             }
         });
-
         // 长按屏幕进入无敌模式
         skierView.setOnLongClickListener(new View.OnLongClickListener() {
             @Override
@@ -182,14 +192,14 @@ public class Runing extends AppCompatActivity implements SensorEventListener {
                     isInvincible = true;
                     invincibleCoins = 1;
                     coinCount--;
-                    coinQuantityText.setText(""+coinCount);
+                    coinQuantityText.setText("" + coinCount);
                     handler.postDelayed(new Runnable() {
                         @Override
                         public void run() {
                             if (isInvincible) {
                                 if (coinCount > 0) {
                                     coinCount--;
-                                    coinQuantityText.setText(""+coinCount);
+                                    coinQuantityText.setText("" + coinCount);
                                 } else {
                                     isInvincible = false;
                                 }
@@ -204,14 +214,16 @@ public class Runing extends AppCompatActivity implements SensorEventListener {
         // 启动障碍物和金币生成任务
         startObstacleGenerator();
         startCoinGenerator();
+        snowView = findViewById(R.id.snow);
+        collisionHandler.postDelayed(collisionChecker, 100);
     }
+
     private Bitmap changeNonBlackPixelsColor(Bitmap sourceBitmap, int newColor) {
-        // 使用 Objects.requireNonNull 进行非空处理
+        // 使用Objects.requireNonNull进行非空处理
         Bitmap.Config config = Objects.requireNonNull(sourceBitmap.getConfig());
         Bitmap resultBitmap = sourceBitmap.copy(config, true);
         int width = resultBitmap.getWidth();
         int height = resultBitmap.getHeight();
-
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 int pixelColor = resultBitmap.getPixel(x, y);
@@ -231,21 +243,21 @@ public class Runing extends AppCompatActivity implements SensorEventListener {
                 != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, PERMISSIONS_STORAGE, REQUEST_EXTERNAL_STORAGE);
         } else {
-            // 这里添加屏幕录制的具体代码，示例中暂不实现
+            // 屏幕录制的具体代码，待实现
         }
     }
 
     // 滑雪者跳跃
     private void skierJump() {
-        if (!isPaused && !isGameOver) {
+        if (!isPaused &&!isGameOver) {
             jumpSound.start();
-            // 添加跳跃动画相关逻辑
+            // 跳跃动画相关逻辑
             if (jumpAnimator != null && jumpAnimator.isRunning()) {
                 return;
             }
             ImageView skierImage = findViewById(R.id.sking_peple);
             // 创建属性动画，控制滑雪者Y坐标变化实现跳跃效果
-            jumpAnimator = ObjectAnimator.ofFloat(skierImage, "y", initialY+2100, initialY+2100 - 300f, initialY+2100);
+            jumpAnimator = ObjectAnimator.ofFloat(skierImage, "y", initialY + 2100, initialY + 2100 - 300f, initialY + 2100);
             jumpAnimator.setDuration(400); // 动画时长400毫秒
             jumpAnimator.setInterpolator(new AccelerateDecelerateInterpolator()); // 加速减速插值器
             jumpAnimator.addListener(new AnimatorListenerAdapter() {
@@ -267,6 +279,7 @@ public class Runing extends AppCompatActivity implements SensorEventListener {
         sensorManager.unregisterListener(this);
         handler.removeCallbacks(obstacleGenerator);
         handler.removeCallbacks(coinGenerator);
+        collisionHandler.removeCallbacks(collisionChecker);
     }
 
     // 恢复游戏
@@ -277,6 +290,7 @@ public class Runing extends AppCompatActivity implements SensorEventListener {
         sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME);
         startObstacleGenerator();
         startCoinGenerator();
+        collisionHandler.postDelayed(collisionChecker, 100);
     }
 
     // 开始生成障碍物任务
@@ -306,22 +320,17 @@ public class Runing extends AppCompatActivity implements SensorEventListener {
 
     // 生成障碍物的方法
     private void generateObstacle() {
-        // 创建一个 ImageView 用于显示障碍物图片
         ImageView obstacle = new ImageView(this);
-        // 设置障碍物图片资源
         obstacle.setImageResource(R.drawable.obstacle);
-        // 随机生成障碍物的 x 坐标
-        int x = random.nextInt(gameSceneLayout.getWidth() - obstacle.getDrawable().getIntrinsicWidth());
-        // 障碍物初始 y 坐标为 0
-        int y = 0;
-        // 设置障碍物的 x 坐标
+        // 随机生成障碍物在右下方的初始x坐标
+        int x = gameSceneLayout.getWidth() - obstacle.getDrawable().getIntrinsicWidth();
+        int y = gameSceneLayout.getHeight() - obstacle.getDrawable().getIntrinsicHeight();
         obstacle.setX(x);
-        // 设置障碍物的 y 坐标
         obstacle.setY(y);
-        // 将障碍物的 ImageView 添加到游戏场景布局中
+        obstacle.setTag("obstacle");
         gameSceneLayout.addView(obstacle);
+        startMovingView(obstacle);
     }
-
 
     // 开始生成金币任务
     private void startCoinGenerator() {
@@ -350,21 +359,39 @@ public class Runing extends AppCompatActivity implements SensorEventListener {
 
     // 生成金币的方法
     private void generateCoin() {
-        // 创建一个 ImageView 用于显示金币图片
         ImageView coin = new ImageView(this);
-        // 设置金币图片资源
         coin.setImageResource(R.drawable.coin);
-        coin.setScrollBarSize(50);
-        // 随机生成金币的 x 坐标
-        int x = random.nextInt(gameSceneLayout.getWidth() - coin.getDrawable().getIntrinsicWidth());
-        // 金币初始 y 坐标为 0
-        int y = 2160;
-        // 设置金币的 x 坐标
-        coin.setX(250);
-        // 设置金币的 y 坐标
+        // 随机生成金币在右下方的初始x坐标
+        int x = gameSceneLayout.getWidth() - coin.getDrawable().getIntrinsicWidth();
+        int y = gameSceneLayout.getHeight() - coin.getDrawable().getIntrinsicHeight();
+        coin.setX(x);
         coin.setY(y);
-        // 将金币的 ImageView 添加到游戏场景布局中
+        coin.setTag("coin");
         gameSceneLayout.addView(coin);
+        startMovingView(coin);
+    }
+
+    // 开始移动视图的方法
+    private void startMovingView(final ImageView view) {
+        Handler handler = new Handler();
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (!isPaused &&!isGameOver) {
+                    float newX = view.getX() - 10; // 根据实际情况调整移动速度
+                    if (newX < -view.getDrawable().getIntrinsicWidth()) {
+                        gameSceneLayout.removeView(view);
+                    } else {
+                        view.setX(newX);
+                        // 根据雪地坡度调整y坐标，这里假设坡度为snowView.getRotation()
+                        float slope = snowView.getRotation();
+                        float newY = view.getY() + (float) (Math.sin(Math.toRadians(slope)) * 10);
+                        view.setY(newY);
+                        handler.postDelayed(this, 50);
+                    }
+                }
+            }
+        }, 50);
     }
 
 
@@ -373,8 +400,15 @@ public class Runing extends AppCompatActivity implements SensorEventListener {
     public void onSensorChanged(SensorEvent event) {
         if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
             float x = event.values[0];
-            if (!isPaused && !isGameOver) {
-                // 根据x值处理游戏速度、倾斜等逻辑，待实现
+            if (!isPaused &&!isGameOver) {
+                // 根据x值处理游戏速度、倾斜等逻辑
+                float rotationDegree = x * 10; // 根据实际情况调整系数
+                if (rotationDegree > 30) {
+                    rotationDegree = 30;
+                } else if (rotationDegree < -30) {
+                    rotationDegree = -30;
+                }
+                snowView.setRotation(rotationDegree);
             }
         }
     }
@@ -404,53 +438,41 @@ public class Runing extends AppCompatActivity implements SensorEventListener {
         handler.removeCallbacks(obstacleGenerator);
         handler.removeCallbacks(coinGenerator);
         sensorManager.unregisterListener(this);
-
-        gameDuration = SystemClock.elapsedRealtime() - startTime;
-        durationText.setText("Duration: " + gameDuration / 1000 + "s");
-
+        gameDuration = (System.currentTimeMillis() - gameStartTime) / 1000;
+        durationText.setText("Duration: " + gameDuration + "s");
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Game Over")
-                .setMessage("Player Name: \nCoin Quantity: " + coinCount + "\nDuration: " + gameDuration / 1000 + "s")
+                .setMessage("Player Name: \nCoin Quantity: " + coinCount + "\nDuration: " + gameDuration + "s")
                 .setPositiveButton("Restart", (dialog, which) -> restartGame())
                 .setNegativeButton("To Rankings", (dialog, which) -> goToRankings())
                 .show();
     }
 
-    // 重新开始游戏
+    // 重启游戏
     private void restartGame() {
         isGameOver = false;
         isPaused = false;
         coinCount = 10;
-        coinQuantityText.setText("Coin Quantity: " + coinCount);
+        coinQuantityText.setText("" + coinCount);
         startTime = SystemClock.elapsedRealtime();
+        gameStartTime = System.currentTimeMillis();
         sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME);
         backgroundMusic.start();
-        startRecording();
         startObstacleGenerator();
         startCoinGenerator();
+        collisionHandler.postDelayed(collisionChecker, 100);
+        // 移除所有障碍物和金币
+        gameSceneLayout.removeAllViews();
+        // 重置滑雪者位置
+        skierView.setX(0);
+        skierView.setY(initialY);
     }
 
     // 前往排行榜
     private void goToRankings() {
-        // 前往排行榜页面的逻辑，
-        List<RankingItem> rankingItems = new ArrayList<>();
-        Intent intent = new Intent(Runing.this, RankingPage.class);
-        intent.putParcelableArrayListExtra("rankingItems", (ArrayList<RankingItem>) rankingItems);
-        intent.putExtra("fromGamePage", true);
+        Intent intent = new Intent(this, RankingPage.class);
         startActivity(intent);
-    }
-
-    // 保存屏幕录制视频（需完善）
-    private void saveRecording(Bitmap bitmap) {
-        File path = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
-        File file = new File(path, "game_recording.jpg");
-        try {
-            FileOutputStream fos = new FileOutputStream(file);
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 100, fos);
-            fos.close();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        finish();
     }
 
     @Override
@@ -463,6 +485,3 @@ public class Runing extends AppCompatActivity implements SensorEventListener {
         sensorManager.unregisterListener(this);
     }
 }
-
-
-
